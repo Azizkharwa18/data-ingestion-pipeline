@@ -30,9 +30,18 @@ def get_db_credentials():
 
         # 4. Extract the data
         # The actual data is nested deep in the JSON response
-        credentials = read_response['data']['data']
+        data = read_response['data']['data']
+        username = data.get('username')
+        password = data.get('password')
+        host = data.get('host') # e.g., 'timescaledb' or 'localhost'
+        port = data.get('port', '5432')
+        dbname = data.get('dbname', 'analytics_db')
+
+        # Construct Secure Connection String
+        # format: postgresql://user:pass@host:port/dbname
+        conn_string = f"postgresql://{username}:{password}@{host}:{port}/{dbname}"
         
-        return credentials
+        return conn_string
 
     except Exception as e:
         print(f"❌ Error fetching secrets from Vault: {e}")
@@ -45,8 +54,6 @@ if __name__ == "__main__":
     
     if creds:
         print("\n✅ Success! Credentials retrieved:")
-        print(f"   User: {creds['username']}")
-        print(f"   Pass: {creds['password']}") # In real app, never print this!
-        print(f"   Host: {creds['host']}")
+        print(f"Connection String: {creds}")
     else:
         print("Failed to retrieve credentials.")

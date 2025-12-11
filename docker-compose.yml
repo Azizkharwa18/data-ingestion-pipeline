@@ -62,6 +62,23 @@ services:
   #   networks:
   #     - lam_network
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: lam_timescale
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: analytics_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    networks:
+      - lam_network
+
+volumes:
+  timescale_data:
+
 networks:
   lam_network:
     driver: bridge
