@@ -1,0 +1,32 @@
+This is a revocation certificate for the OpenPGP key:
+
+pub   rsa2048 2025-12-11 [SCEAR]
+      F94ED12CF99EA2C9E74A8A3E1FDFDD453D17E27D
+uid          LAM Research Admin <admin@lamresearch.com>
+
+A revocation certificate is a kind of "kill switch" to publicly
+declare that a key shall not anymore be used.  It is not possible
+to retract such a revocation certificate once it has been published.
+
+Use it to revoke this key in case of a compromise or loss of
+the secret key.  However, if the secret key is still accessible,
+it is better to generate a new revocation certificate and give
+a reason for the revocation.  For details see the description of
+of the gpg command "--generate-revocation" in the GnuPG manual.
+
+To avoid an accidental use of this file, a colon has been inserted
+before the 5 dashes below.  Remove this colon with a text editor
+before importing and publishing this revocation certificate.
+
+:-----BEGIN PGP PUBLIC KEY BLOCK-----
+Comment: This is a revocation certificate
+
+iQE2BCABCAAgFiEE+U7RLPmeosnnSoo+H9/dRT0X4n0FAmk6d48CHQAACgkQH9/d
+RT0X4n3bxgf/c3KHs0mMK/T+VeXWPLoxO/vgYbAw2UBnlBVmjqh/bQb+DoqDr8+q
+blS+3978nSVGLrhxUSU8aVYviu/ejDhJOXXTwYX7LwCe0Wao9mfqjMshXPDAzHpQ
+hl6Fkan0IkYGsdAwIThOKDVOYJn7c113O/BvTeVvVVYBME9laqqQeKc6uSKgFXFl
+2uKOF3/rcBUCPsO5w1dZ/7RnLFPh4TQmiv2XrKpLv1yP4etyPfduYZSB9Wzt6PCz
+g2kPc681+5fEz0ziKXX5Fz15YTZY7TKRp/P/84xbRGDiqxLxWgrCXHqHfEAzQVBQ
+X0ocvSez7QsMYjyc8ESIQj1a46b778bp7A==
+=HHAC
+-----END PGP PUBLIC KEY BLOCK-----

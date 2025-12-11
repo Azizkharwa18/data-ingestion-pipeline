@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # -----------------------------
+  # 1. RabbitMQ (Message Broker)
+  # -----------------------------
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: lam_rabbitmq
+    hostname: rabbitmq
+    ports:
+      - "5672:5672"      # Main standard port
+      - "15672:15672"    # Management UI (access at http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - lam_network
+
+  # -----------------------------
+  # 2. Redis (Cache & Celery Backend)
+  # -----------------------------
+  redis:
+    image: redis:alpine
+    container_name: lam_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - lam_network
+
+  # -----------------------------
+  # 3. HashiCorp Vault (Secrets)
+  # -----------------------------
+  vault:
+    image: hashicorp/vault:latest   # <--- CHANGED THIS LINE
+    container_name: lam_vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root_token_123
+      VAULT_ADDR: 'http://0.0.0.0:8200'
+    cap_add:
+      - IPC_LOCK
+    networks:
+      - lam_network
+    # Note: the command is often not needed for dev mode if env vars are set, 
+    # but strictly setting it ensures it starts in dev mode.
+    command: server -dev -dev-listen-address="0.0.0.0:8200"
+
+  # -----------------------------
+  # 4. Celery Worker (Placeholder)
+  # -----------------------------
+  # We will uncomment this later when we build the Python image
+  # worker:
+  #   build: .
+  #   command: celery -A tasks worker --loglevel=info
+  #   volumes:
+  #     - .:/app
+  #   depends_on:
+  #     - rabbitmq
+  #     - redis
+  #   networks:
+  #     - lam_network
+
+networks:
+  lam_network:
+    driver: bridge

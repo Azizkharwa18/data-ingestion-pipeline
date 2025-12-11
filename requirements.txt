@@ -1,0 +1,21 @@
+# --- Web API & Dashboard ---
+fastapi>=0.100.0        # Modern, high-performance API framework
+uvicorn[standard]>=0.23 # ASGI Server to run FastAPI
+dash>=2.17.0            # Your existing dashboard library
+
+# --- Async Task Management (RabbitMQ + Redis) ---
+celery>=5.3.0           # The task manager
+redis>=5.0.0            # Python client for Redis
+
+# --- Big Data Processing ---
+dask[complete]>=2023.0.0 # Parallel computing library
+pandas>=2.0.0           # Data manipulation
+numpy>=1.24.0
+
+# --- Security & Encryption ---
+hvac>=1.1.0             # HashiCorp Vault Client
+python-gnupg>=0.5.0     # PGP Encryption wrapper
+
+# --- Utilities ---
+python-dotenv>=1.0.0    # To load env variables
+requests>=2.31.0
