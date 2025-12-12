@@ -3,6 +3,7 @@ import polars as pl
 from sqlalchemy import create_engine, text
 from vault_util import get_db_credentials 
 import traceback  # <--- Essential for debugging
+import time
 
 def process_partition(pandas_df, db_conn_str):
     """
@@ -46,6 +47,7 @@ def process_heavy_data(file_path):
     """
     Synchronous version of the heavy processing task.
     """
+    start_time=time.time()
     print(f"🔐 Fetching credentials from Vault...")
     
     # 1. GET SECURE CONNECTION STRING (Sync call)
@@ -71,8 +73,7 @@ def process_heavy_data(file_path):
                     category TEXT,
                     region TEXT,
                     amount DOUBLE PRECISION,
-                    adjusted_amount DOUBLE PRECISION,
-                    transaction_id PRECISION
+                    adjusted_amount DOUBLE PRECISION
                 );
             """))
             print("🛠️ database setup completed...")
@@ -90,22 +91,42 @@ def process_heavy_data(file_path):
 
     # 3. Dask Orchestration
     try:
-        print("Started Dask Service Chunking.") 
-        ddf = dd.read_csv(file_path)
+        # 2. Lazy Load & Transform (Polars is instantaneous here)
+        # We use scan_csv for lazy loading, but for 1M rows read_csv is also fine.
+        q = (
+            pl.scan_csv(file_path)
+            .with_columns(
+                pl.col("timestamp").str.to_datetime(),
+                (pl.col("amount") * 1.1).alias("adjusted_amount")
+            )
+        )
+
+        # 3. Collect (Execute the plan)
+        df = q.collect()
+        print(f"⚡ Data Processed in {time.time() - start_time:.2f}s. Rows: {len(df)}")
+
+        # 4. Fast Write using ADBC (The Secret Sauce)
+        # SQLAlchemy insert() does row-by-row or batched inserts (slow).
+        # ADBC writes the Arrow memory buffer directly to Postgres (fast).
         
-        print("Storing Data on Timescale.") 
-        # map_partitions is lazy; compute() triggers the execution
-        result = ddf.map_partitions(
-            process_partition, 
-            db_conn_str=db_conn_str, 
-            meta=('rows', 'int')
+        write_start = time.time()
+        
+        # Ensure the table exists before writing (optional if you are sure)
+        # Note: ADBC creates tables, but for complex schemas (Hypertable), 
+        # keep your existing setup logic or run it once separately.
+        
+        df.write_database(
+            table_name="sales_metrics",
+            connection=db_conn_str,
+            if_table_exists="append",
+            engine="adbc"  # <--- THIS IS THE KEY CHANGE
         )
         
-        # compute() returns a pandas Series of row counts, sum() aggregates them
-        total_rows = result.compute().sum()
+        total_time = time.time() - start_time
+        print(f"✅ Write Complete in {time.time() - write_start:.2f}s.")
+        print(f"🏁 Total Pipeline Time: {total_time:.2f}s")
         
-        print(f"✅ Dask+Polars: Completed ingestion. Total Rows Processed: {int(total_rows)}")
-        return {"status": "success", "rows_processed": int(total_rows)}
+        return {"status": "success", "rows_processed": len(df), "time_sec": total_time}
 
     except Exception as e:
         print(f"❌ Dask Execution Error: {e}")
