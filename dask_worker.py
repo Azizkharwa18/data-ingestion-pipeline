@@ -1,4 +1,3 @@
-import dask.dataframe as dd
 import polars as pl
 from sqlalchemy import create_engine, text
 from vault_util import get_db_credentials 
