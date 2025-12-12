@@ -7,7 +7,6 @@ def generate_large_csv(filename="large_sales_data.csv", rows=1_000_000):
     
     # Create random data
     df = pd.DataFrame({
-        'transaction_id': np.arange(rows),
         'date': pd.date_range(start='1/1/2020', periods=rows, freq='S'),
         'category': np.random.choice(['Electronics', 'Clothing', 'Home', 'Toys'], rows),
         'amount': np.random.uniform(10, 1000, rows).round(2),

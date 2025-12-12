@@ -1,66 +1,101 @@
-# app.py
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from celery.result import AsyncResult
-# FIX: Import the correct task name
-from celery_app import celery_app, generate_report_task
-# Add these imports
 from sqlalchemy import create_engine, text
+from typing import Optional, List
+
+# Imports from your existing modules
+from celery_app import celery_app, generate_report_task
 from vault_util import get_db_credentials
 
-app = Flask(__name__)
-CORS(app) 
+app = FastAPI(title="Data Ingestion Pipeline API")
 
-@app.route('/api/start-task', methods=['POST'])
-def start_task():
-    # You can pass the filename from the frontend if needed
-    filename = request.json.get('filename', 'large_sales_data.csv')
-    
-    # FIX: Call the correct task
-    task = generate_report_task.delay(filename) 
-    
-    return jsonify({'task_id': task.id}), 202
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.route('/api/status/<task_id>', methods=['GET'])
-def get_status(task_id):
+# --- Pydantic Models ---
+class TaskRequest(BaseModel):
+    filename: Optional[str] = 'large_sales_data.csv'
+
+class TaskResponse(BaseModel):
+    task_id: str
+
+class MetricsResponse(BaseModel):
+    bucket: str  # TimescaleDB returns timestamps as strings/datetime
+    category: str
+    avg_value: float
+
+# --- Endpoints ---
+
+@app.post("/api/start-task", response_model=TaskResponse, status_code=status.HTTP_202_ACCEPTED)
+def start_task(request: TaskRequest):
+    """
+    Triggers the Celery task to process the CSV file.
+    """
+    print(f"🚀 Triggering task for file: {request.filename}")
+    # .delay() is the standard way to call Celery tasks asynchronously
+    task = generate_report_task.delay(request.filename)
+    return {"task_id": task.id}
+
+@app.get("/api/status/{task_id}")
+def get_status(task_id: str):
+    """
+    Checks the status of a specific Celery task.
+    """
     try:
         task_result = AsyncResult(task_id, app=celery_app)
-        response = {
-            'task_id': task_id,
-            'status': task_result.status, 
-            'result': task_result.result if task_result.ready() else None
+        
+        result_data = None
+        if task_result.ready():
+            result_data = task_result.result
+            
+        return {
+            "task_id": task_id,
+            "status": task_result.status,
+            "result": result_data
         }
-        return jsonify(response)
-    
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
-    
+        raise HTTPException(status_code=400, detail=str(e))
 
-@app.route('/api/metrics', methods=['GET'])
+@app.get("/api/metrics")
 def get_metrics():
     """
-    Returns time-series data for Angular Graph.
-    Aggregates data by 1-hour buckets (TimescaleDB feature).
+    Returns time-series data aggregated by 1-hour buckets.
     """
-    conn_string=get_db_credentials()
-    engine = create_engine(conn_string)
-    
-    # TimescaleDB 'time_bucket' is amazing for graphs!
-    query = """
-        SELECT 
-            time_bucket('1 hour', timestamp) AS bucket,
-            category,
-            AVG(adjusted_amount) as avg_value
-        FROM sales_metrics
-        GROUP BY bucket, category
-        ORDER BY bucket ASC;
-    """
-    
-    with engine.connect() as conn:
-        result = conn.execute(text(query))
-        rows = [dict(row) for row in result.mappings()]
+    try:
+        conn_string = get_db_credentials()
+        if not conn_string:
+            raise HTTPException(status_code=500, detail="Could not fetch DB credentials")
+            
+        engine = create_engine(conn_string)
         
-    return jsonify(rows)
+        query = """
+            SELECT 
+                time_bucket('1 hour', timestamp) AS bucket,
+                category,
+                AVG(adjusted_amount) as avg_value
+            FROM sales_metrics
+            GROUP BY bucket, category
+            ORDER BY bucket ASC;
+        """
+        
+        with engine.connect() as conn:
+            result = conn.execute(text(query))
+            # Convert SQLAlchemy rows to list of dicts
+            rows = [dict(row) for row in result.mappings()]
+            
+        return rows
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=5000, reload=True)
