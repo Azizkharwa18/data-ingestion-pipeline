@@ -6,6 +6,7 @@ from celery.result import AsyncResult
 from celery_app import celery_app, generate_report_task
 # Add these imports
 from sqlalchemy import create_engine, text
+from vault_util import get_db_credentials
 
 app = Flask(__name__)
 CORS(app) 
@@ -33,9 +34,7 @@ def get_status(task_id):
     
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    
 
 @app.route('/api/metrics', methods=['GET'])
 def get_metrics():
@@ -43,7 +42,8 @@ def get_metrics():
     Returns time-series data for Angular Graph.
     Aggregates data by 1-hour buckets (TimescaleDB feature).
     """
-    engine = create_engine("postgresql://admin:admin_password@localhost:5432/analytics_db")
+    conn_string=get_db_credentials()
+    engine = create_engine(conn_string)
     
     # TimescaleDB 'time_bucket' is amazing for graphs!
     query = """
@@ -61,3 +61,6 @@ def get_metrics():
         rows = [dict(row) for row in result.mappings()]
         
     return jsonify(rows)
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

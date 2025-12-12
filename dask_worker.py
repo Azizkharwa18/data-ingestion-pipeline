@@ -1,7 +1,7 @@
 import dask.dataframe as dd
 import time
 import polars as pl
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine,text
 from vault_util import get_db_credentials  # <--- NEW IMPORT
 
 def process_partition(pandas_df, db_conn_str):
@@ -38,11 +38,11 @@ def process_partition(pandas_df, db_conn_str):
         print(f"⚠️ Worker Error: {e}")
         return 0
 
-def process_heavy_data(file_path):
+async def process_heavy_data(file_path):
     print(f"🔐 Fetching credentials from Vault...")
     
     # 1. GET SECURE CONNECTION STRING
-    db_conn_str = get_db_credentials()
+    db_conn_str = await get_db_credentials()
     if not db_conn_str:
         return {"status": "failed", "error": "Could not retrieve DB credentials"}
 
@@ -50,10 +50,13 @@ def process_heavy_data(file_path):
     
     # 2. Setup Database (Create table if missing)
     try:
-        engine = create_engine(db_conn_str)
+        
+        print(f"⚡ Starting DB Setup...")
+        engine = await create_engine(db_conn_str)
         with engine.connect() as conn:
-            conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
-            conn.execute("""
+            print("🛠️ Setting up database...")
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+            query="""
                 CREATE TABLE IF NOT EXISTS sales_metrics (
                     timestamp TIMESTAMPTZ NOT NULL,
                     category TEXT,
@@ -61,29 +64,36 @@ def process_heavy_data(file_path):
                     amount DOUBLE PRECISION,
                     adjusted_amount DOUBLE PRECISION
                 );
-            """)
-            # Convert to Hypertable (Timescale Magic)
+            """
+            await conn.execute(text(query))
+           
+
             try:
-                conn.execute("SELECT create_hypertable('sales_metrics', 'timestamp', if_not_exists => TRUE);")
+                # Convert to Hypertable (Timescale Magic)
+                print("🟡 Kuch to Batawo kya huwa he ?.") 
+                await conn.execute("SELECT create_hypertable('sales_metrics', 'timestamp', if_not_exists => TRUE);")
             except:
-                pass 
+                print("🟡 Hypertable already exists.") 
+
     except Exception as e:
         return {"status": "failed", "error": f"DB Setup Error: {str(e)}"}
 
     # 3. Dask Orchestration
     try:
+        print("Started Dask Service Chunking.") 
         ddf = dd.read_csv(file_path)
         
         # Pass the connection string to every worker partition
         # meta handles the return type expectation (an integer count)
-        result = ddf.map_partitions(
+        print("Storing Data on Timescale.") 
+        result = await ddf.map_partitions(
             process_partition, 
             db_conn_str=db_conn_str, 
             meta=('rows', 'int')
         )
-
-        total_rows = result.compute().sum()
         
+        total_rows = result.compute().sum()
+        print(f"✅ Dask+Polars: Completed ingestion. Total Rows Processed: {int(total_rows)}")
         return {"status": "success", "rows_processed": int(total_rows)}
 
     except Exception as e:

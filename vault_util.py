@@ -39,6 +39,7 @@ def get_db_credentials():
 
         # Construct Secure Connection String
         # format: postgresql://user:pass@host:port/dbname
+        print("✅ Successfully retrieved secrets from Vault.")
         conn_string = f"postgresql://{username}:{password}@{host}:{port}/{dbname}"
         
         return conn_string
