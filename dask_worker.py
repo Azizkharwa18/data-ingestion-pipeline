@@ -2,6 +2,7 @@ import dask.dataframe as dd
 import polars as pl
 from sqlalchemy import create_engine, text
 from vault_util import get_db_credentials 
+import traceback  # <--- Essential for debugging
 
 def process_partition(pandas_df, db_conn_str):
     """
@@ -13,13 +14,12 @@ def process_partition(pandas_df, db_conn_str):
     try:
         # 1. Zero-Copy Convert to Polars
         df = pl.from_pandas(pandas_df)
-        df["transaction_id"].drop(in_place=True)  # Drop unnecessary column
         # 2. Transform 
         processed_df = (
             df.lazy()
             .with_columns(
                 pl.col("timestamp").str.to_datetime(),
-                (pl.col("amount") * 1.1).alias("adjusted_amount")
+                (pl.col("amount") * 1.1).alias("adjusted_amount")                
             )
             .collect()
         )
@@ -37,9 +37,10 @@ def process_partition(pandas_df, db_conn_str):
         return len(processed_df)
 
     except Exception as e:
-        print(f"❌ CRITICAL WORKER ERROR: {e}")
+        # 🛑 DO NOT SWALLOW EXCEPTIONS. PRINT THEM!
+        print(f"❌ Worker FAILED: {str(e)}")
         traceback.print_exc()
-        raise e
+        raise e  # Raise so Dask knows this partition failed
 
 def process_heavy_data(file_path):
     """
@@ -50,7 +51,8 @@ def process_heavy_data(file_path):
     # 1. GET SECURE CONNECTION STRING (Sync call)
     db_conn_str = get_db_credentials()
     if not db_conn_str:
-        return {"status": "failed", "error": "Could not retrieve DB credentials"}
+        print("❌ Failed to get DB credentials")
+        return {"status": "failed", "error": "No DB Creds"}
 
     print(f"⚡ Dask+Polars: Starting ingestion for {file_path}...")
     
@@ -60,31 +62,31 @@ def process_heavy_data(file_path):
         # Create synchronous engine
         engine = create_engine(db_conn_str)
         
-        with engine.connect() as conn:
+        with engine.begin() as conn:
             print("🛠️ Setting up database...")
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;"))
-            conn.execute("""
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS sales_metrics (
                     timestamp TIMESTAMPTZ NOT NULL,
                     category TEXT,
                     region TEXT,
                     amount DOUBLE PRECISION,
-                    adjusted_amount DOUBLE PRECISION
+                    adjusted_amount DOUBLE PRECISION,
+                    transaction_id PRECISION
                 );
-            """)
-            conn.commit()  # Ensure changes are committed
+            """))
             print("🛠️ database setup completed...")
 
             try:
                 # Convert to Hypertable
                 conn.execute(text("SELECT create_hypertable('sales_metrics', 'timestamp', if_not_exists => TRUE);"))
-                conn.commit()
                 print("🛠️ hypertable setup completed...")
             except Exception as e:
                 print(f"🟡 Hypertable info: {e}") 
 
     except Exception as e:
-        return {"status": "failed", "error": f"DB Setup Error: {str(e)}"}
+        print(f"❌ DB Setup Error: {e}")
+        return {"status": "failed", "error": str(e)}
 
     # 3. Dask Orchestration
     try:
@@ -106,4 +108,6 @@ def process_heavy_data(file_path):
         return {"status": "success", "rows_processed": int(total_rows)}
 
     except Exception as e:
+        print(f"❌ Dask Execution Error: {e}")
+        traceback.print_exc()
         return {"status": "failed", "error": str(e)}
